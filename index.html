@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>遺物シミュレーター v1.3.1</title>
+<title>遺物シミュレーター v1.3.3</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Hiragino Sans','Yu Gothic',sans-serif;background:#1a1a2e;color:#e0e0e0;min-height:100vh;}
@@ -566,8 +566,9 @@ body.font-lg .opt-warn-lbl{font-size:16px;}
 .opt-type-btn:hover{border-color:#4a6a8a;color:#8ab;}
 .opt-type-btn.active{background:#1a2a4a;border-color:#4a6a9a;color:#8ab;font-weight:bold;}
 .opt-add-sec{margin-top:16px;padding:12px;background:#060e1c;border:1px solid #1a2a3a;border-radius:6px;}
-.opt-add-lbl{font-size:11px;color:#6a8aaa;margin-bottom:8px;}
-.opt-add-lbl span{color:#334;font-size:10px;}
+.opt-add-lbl{font-size:11px;color:#6a8aaa;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+.opt-add-lbl span{color:#334;font-size:10px;flex:1;}
+.opt-add-limit-sel{font-size:10px;background:#0a1828;color:#6a8aaa;border:1px solid #1a2a3a;border-radius:4px;padding:1px 4px;cursor:pointer;}
 .opt-add-grid{display:flex;flex-wrap:wrap;gap:4px;}
 .opt-add-item{display:inline-flex;align-items:center;gap:0;padding:3px 0 3px 8px;font-size:11px;background:#0a1a2a;border:1px solid #1a3a5a;border-radius:10px;color:#7ab3e0;cursor:pointer;transition:background .15s;}
 .opt-add-item:hover{background:#1a3a6a;color:#c0e0ff;}
@@ -838,7 +839,7 @@ body.font-lg .preset-sub-info{font-size:14px;}
 </head>
 <body>
 <header>
-  <div class="h-title"><h1>遺物シミュレーター</h1><span>Nightreign</span><span class="h-ver">v1.3.1</span></div>
+  <div class="h-title"><h1>遺物シミュレーター</h1><span>Nightreign</span><span class="h-ver">v1.3.3</span></div>
   <nav class="tabs">
     <button class="tab-btn active" onclick="switchTab('optimal',this)">ビルド検索</button>
     <button class="tab-btn" onclick="switchTab('registry',this)">遺物登録</button>
@@ -966,6 +967,17 @@ body.font-lg .preset-sub-info{font-size:14px;}
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <button class="btn-gold" onclick="runOptSearch()">最適な組み合わせを検索</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:8px;">
+            <span style="font-size:10px;color:#668;">追加できる効果の表示数</span>
+            <select id="optAddEffLimitSel" class="opt-add-limit-sel" onchange="optAddEffLimit=parseInt(this.value);localStorage.setItem('optAddEffLimit',this.value);">
+              <option value="10">10件</option>
+              <option value="20">20件</option>
+              <option value="30" selected>30件</option>
+              <option value="50">50件</option>
+              <option value="-1">デメリット以外全件</option>
+              <option value="0">全件</option>
+            </select>
           </div>
         </div>
       </div>
@@ -2070,6 +2082,7 @@ const FONT_SIZES = ['小', '中', '大'];
 const FONT_CLASSES = ['', 'font-md', 'font-lg'];
 let fontIdx = parseInt(localStorage.getItem('fontIdx')||'0');
 let optAllEffects = localStorage.getItem('optAllEffects')==='1';
+let optAddEffLimit = parseInt(localStorage.getItem('optAddEffLimit')||'30');
 
 function onOptAllEffectsChange(){
   optAllEffects = document.getElementById('optAllEffects').checked;
@@ -2122,6 +2135,8 @@ window.matchMedia('(max-width:768px)').addEventListener('change', applyFontSize)
 document.addEventListener('DOMContentLoaded', ()=>{
   const cb = document.getElementById('optAllEffects');
   if(cb) cb.checked = optAllEffects;
+  const limitSel = document.getElementById('optAddEffLimitSel');
+  if(limitSel) limitSel.value = String(optAddEffLimit);
   renderShopList();
   // 初期アクティブタブを下部タブバーにも反映
   const activeTab = document.querySelector('.tab-page.active');
@@ -4268,7 +4283,7 @@ function findAllAssignmentsBacktrack(vessel, desiredMeritSpecs, desiredDemIds, p
       used.add(r.id); asgn.push(r);
       bt(si+1,used,asgn,cov,cur+gained,lpFirst);
       asgn.pop(); used.delete(r.id);
-      covUndo.forEach(({id,was})=>cov.set(id,was));
+      for(let i=covUndo.length-1;i>=0;i--) cov.set(covUndo[i].id,covUndo[i].was);
       newLpIds.forEach(id=>lpFirst.delete(id));
     }
   }
@@ -4393,8 +4408,8 @@ function findAllAssignmentsBruteForce(vessel, desiredMeritSpecs, desiredDemIds, 
       asgn.pop();
       used.delete(r.id);
 
-      // 仮配置を取り消す
-      covUndo.forEach(({id,was})=>cov.set(id,was));
+      // 仮配置を取り消す（逆順で適用して同一キーの二重登録に対応）
+      for(let i=covUndo.length-1;i>=0;i--) cov.set(covUndo[i].id,covUndo[i].was);
       newLpIds.forEach(id=>lpFirst.delete(id));
     }
   }
@@ -4426,8 +4441,16 @@ function getOptRelics(){
   return all;
 }
 
-function _showOptSpinner(){ const el=document.getElementById('optSearchSpinner'); if(el) el.style.display='flex'; }
+function _showOptSpinner(){ const el=document.getElementById('optSearchSpinner'); if(el) el.style.display='flex'; _updateOptProgress(0,0); }
 function _hideOptSpinner(){ const el=document.getElementById('optSearchSpinner'); if(el) el.style.display='none'; }
+function _updateOptProgress(current, total){
+  const prog=document.getElementById('optSearchProgress');
+  const bar=document.getElementById('optSearchProgressBar');
+  if(!prog||!bar) return;
+  if(!total){ prog.style.display='none'; bar.style.width='0%'; return; }
+  prog.style.display='block';
+  bar.style.width=Math.round(current/total*100)+'%';
+}
 
 function runOptSearch(){
   const res=document.getElementById('optResults');
@@ -4512,9 +4535,12 @@ async function _runOptSearchCore(){
   const allResults=[];
   const seenKeys=new Set();
   const _yield=()=>new Promise(r=>setTimeout(r,0));
+  _updateOptProgress(0, vessels.length);
   for(let _vi=0;_vi<vessels.length;_vi++){
     if(allResults.length>=200) break;
     const v=vessels[_vi];
+    _updateOptProgress(_vi, vessels.length);
+    await _yield();
     const asgnList=findAllAssignments(v,wantMeritSpecs,wantDemIds,pool,100);
     const filtered=asgnList.filter(passExcFilter);
     for(const asgn of filtered){
@@ -4527,9 +4553,9 @@ async function _runOptSearchCore(){
       const {active, inactive}=countEffects(asgn);
       allResults.push({vessel:v,assignment:asgn,covered:total,total,_activeCount:active,_inactiveCount:inactive});
     }
-    // 5献器ごとにブラウザへ制御を返す
-    if((_vi+1)%5===0) await _yield();
   }
+  _updateOptProgress(vessels.length, vessels.length);
+  await _yield(); // バー100%を描画してからrenderOptResultsへ
   // 第1キー: 発動効果数の多い順、第2キー: 無効化効果数の少ない順（同数は献器リスト順を維持）
   allResults.sort((a,b)=>b._activeCount-a._activeCount||a._inactiveCount-b._inactiveCount);
   allResults.splice(20);
@@ -4648,8 +4674,7 @@ function renderOptResults(results){
         if(!em.size&&!ed.size) return true;
         const lp=new Map();
         asgn.forEach((rel,si)=>{ if(!rel) return; rel.effs.forEach(e=>{ if(e.merit?.leftPriorityId>0&&!lp.has(e.merit.leftPriorityId)) lp.set(e.merit.leftPriorityId,si); }); });
-        return asgn.every((rel,si)=>{ if(!rel) return true; return rel.effs.every(e=>{ if(!e.merit) return true; const act=!e.merit.leftPriorityId||lp.get(e.merit.leftPriorityId)===si; if(!act) return true; if(em.has(e.merit.id)) return false; if(e.demerit&&ed.has(e.demerit.id)) return false; return true; }); });
-      }
+        return asgn.every((rel,si)=>{ if(!rel) return true; return rel.effs.every(e=>{ if(!e.merit) return true; const act=!e.merit.leftPriorityId||lp.get(e.merit.leftPriorityId)===si; if(!act) return true; if(em.has(e.merit.id)) return false; if(e.demerit&&ed.has(e.demerit.id)) return false; return true; }); }); }
       const valLimit=(em.size||ed.size)?100:1;
       for(const v of vs){
         if(findAllAssignments(v,testMs,testDs,pl,valLimit).some(passExc)) return true;
@@ -4657,41 +4682,37 @@ function renderOptResults(results){
       return false;
     }
 
-    const addMeritsRaw=[...addMeritIds]
+    const _addLimit=optAddEffLimit; // -1=デメリット以外全件, 0=全件, n=n件
+    const _meritCandidates=[...addMeritIds]
       .map(id=>MERITS.find(m=>m.id===id)).filter(Boolean)
-      .filter(m=>{
-        // stackable:false でかつすでに選択済みなら非表示
-        if(!m.stackable&&selNonStackableIds.has(m.id)) return false;
-        // 実際に追加して検索が通るかを検証（配置済み遺物の効果も含めて必ず検証）
-        return validateAddCandidate(m.id, null);
-      })
+      .filter(m=>!(!m.stackable&&selNonStackableIds.has(m.id)))
       .sort((a,b)=>{ const oa=MERIT_CAT_ORDER.indexOf(a.cat),ob=MERIT_CAT_ORDER.indexOf(b.cat); return oa!==ob?oa-ob:a.id-b.id; });
-    // plusVal を持つグループは「(any)」チップ + 個別チップを並べる
-    const seenNames=new Set();
+    const addMeritsRaw=[];
+    for(const m of _meritCandidates){
+      if(_addLimit>0&&addMeritsRaw.length>=_addLimit) break;
+      if(validateAddCandidate(m.id, null)) addMeritsRaw.push(m);
+    }
     const addHtmlParts=[];
     addMeritsRaw.forEach(m=>{
-      if(m.plusVal!==null&&m.plusVal!==undefined){
-        if(!seenNames.has(m.name)){
-          seenNames.add(m.name);
-          const esc=m.name.replace(/'/g,"\\'");
-          addHtmlParts.push(`<div class="opt-add-item anyplus" onclick="addOptEff('m',null,'${esc}');runOptSearch()"><span class="opt-add-item-lbl">${m.name} (any)</span><button class="opt-add-exc" onclick="event.stopPropagation();addOptExcAll('${esc}');runOptSearch()">除外</button></div>`);
-        }
-        addHtmlParts.push(`<div class="opt-add-item" onclick="addOptEff('m',${m.id});runOptSearch()"><span class="opt-add-item-lbl">${m.effect}</span><button class="opt-add-exc" onclick="event.stopPropagation();addOptExc('m',${m.id});runOptSearch()">除外</button></div>`);
-      } else {
-        addHtmlParts.push(`<div class="opt-add-item" onclick="addOptEff('m',${m.id});runOptSearch()"><span class="opt-add-item-lbl">${m.effect}</span><button class="opt-add-exc" onclick="event.stopPropagation();addOptExc('m',${m.id});runOptSearch()">除外</button></div>`);
-      }
+      addHtmlParts.push(`<div class="opt-add-item" onclick="addOptEff('m',${m.id});runOptSearch()"><span class="opt-add-item-lbl">${m.effect}</span><button class="opt-add-exc" onclick="event.stopPropagation();addOptExc('m',${m.id});runOptSearch()">除外</button></div>`);
     });
-    const addDems=[...addDemIds]
+    const _demCandidates=_addLimit===-1?[]:[...addDemIds]
       .map(id=>DEMERITS.find(d=>d.id===id)).filter(Boolean)
-      .filter(d=>!selDIds.has(d.id)&&validateAddCandidate(null,d.id))
+      .filter(d=>!selDIds.has(d.id))
       .sort((a,b)=>a.id-b.id);
+    const addDems=[];
+    for(const d of _demCandidates){
+      if(_addLimit>0&&addMeritsRaw.length+addDems.length>=_addLimit) break;
+      if(validateAddCandidate(null,d.id)) addDems.push(d);
+    }
     const addHtml=[
       ...addHtmlParts,
       ...addDems.map(d=>`<div class="opt-add-item dem" onclick="addOptEff('d',${d.id});runOptSearch()"><span class="opt-add-item-lbl">[デメ] ${d.effect}</span><button class="opt-add-exc" onclick="event.stopPropagation();addOptExc('d',${d.id});runOptSearch()">除外</button></div>`)
     ].join('');
     if(addHtml){
+      const _limitSel=`<select class="opt-add-limit-sel" onchange="optAddEffLimit=parseInt(this.value);localStorage.setItem('optAddEffLimit',this.value);const s=document.getElementById('optAddEffLimitSel');if(s)s.value=this.value;runOptSearch()" onclick="event.stopPropagation()"><option value="10"${_addLimit===10?' selected':''}>10件</option><option value="20"${_addLimit===20?' selected':''}>20件</option><option value="30"${_addLimit===30?' selected':''}>30件</option><option value="50"${_addLimit===50?' selected':''}>50件</option><option value="-1"${_addLimit===-1?' selected':''}>デメリット以外全件</option><option value="0"${_addLimit===0?' selected':''}>全件</option></select>`;
       addSec=`<details class="opt-add-sec" open>
-        <summary class="opt-add-lbl">追加できる効果 <span>（効果を追加して再検索）</span></summary>
+        <summary class="opt-add-lbl">追加できる効果 <span>（効果を追加して再検索）</span>${_limitSel}</summary>
         <div class="opt-add-grid">${addHtml}</div>
       </details>`;
     }
@@ -5670,6 +5691,11 @@ function closeRegDupModal(){
 <div id="optSearchSpinner" style="display:none;position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;flex-direction:column;gap:14px;">
   <div class="opt-spinner"></div>
   <span style="font-size:12px;color:#a0b8d0;letter-spacing:1px;">検索中...</span>
+  <div id="optSearchProgress" style="display:none;">
+    <div style="width:200px;height:4px;background:rgba(100,150,220,0.15);border-radius:2px;overflow:hidden;">
+      <div id="optSearchProgressBar" style="height:100%;width:0%;background:#6496dc;border-radius:2px;transition:width .2s ease;"></div>
+    </div>
+  </div>
 </div>
 <button class="scroll-top-btn" id="scrollTopBtn" onclick="scrollToTop()" aria-label="ページトップへ">↑</button>
 <button class="sp-preset-drawer-handle" id="presetDrawerHandle" onclick="togglePresetDrawer()">›</button>
