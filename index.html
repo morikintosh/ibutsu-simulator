@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>遺物シミュレーター v1.3.3</title>
+<title>遺物シミュレーター v1.3.4</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Hiragino Sans','Yu Gothic',sans-serif;background:#1a1a2e;color:#e0e0e0;min-height:100vh;}
@@ -839,7 +839,7 @@ body.font-lg .preset-sub-info{font-size:14px;}
 </head>
 <body>
 <header>
-  <div class="h-title"><h1>遺物シミュレーター</h1><span>Nightreign</span><span class="h-ver">v1.3.3</span></div>
+  <div class="h-title"><h1>遺物シミュレーター</h1><span>Nightreign</span><span class="h-ver">v1.3.4</span></div>
   <nav class="tabs">
     <button class="tab-btn active" onclick="switchTab('optimal',this)">ビルド検索</button>
     <button class="tab-btn" onclick="switchTab('registry',this)">遺物登録</button>
@@ -4556,8 +4556,14 @@ async function _runOptSearchCore(){
   }
   _updateOptProgress(vessels.length, vessels.length);
   await _yield(); // バー100%を描画してからrenderOptResultsへ
-  // 第1キー: 発動効果数の多い順、第2キー: 無効化効果数の少ない順（同数は献器リスト順を維持）
-  allResults.sort((a,b)=>b._activeCount-a._activeCount||a._inactiveCount-b._inactiveCount);
+  // 第1キー: 空きスロット数の多い順（少ないスロット数で希望効果を達成できるものを優先）
+  // 第2キー: 発動効果数の多い順、第3キー: 無効化効果数の少ない順（同数は献器リスト順を維持）
+  allResults.sort((a,b)=>{
+    const emptyA=a.assignment.filter(r=>!r).length;
+    const emptyB=b.assignment.filter(r=>!r).length;
+    return emptyB-emptyA||b._activeCount-a._activeCount||a._inactiveCount-b._inactiveCount;
+  });
+  const _totalHits=allResults.length;
   allResults.splice(20);
 
   if(!allResults.length){
@@ -4565,12 +4571,14 @@ async function _runOptSearchCore(){
     return;
   }
   // 追加できる効果の検証用にコンテキストを保存
-  _optSearchContext={vessels,pool,pool_all,wantMeritSpecs,wantDemIds,excMerits,excDems};
-  renderOptResults(allResults);
+  _optSearchContext={vessels,pool,pool_all,wantMeritSpecs,wantDemIds,excMerits,excDems,
+    optSelectedSnapshot:JSON.parse(JSON.stringify(optSelected)),
+    optExcludedSnapshot:JSON.parse(JSON.stringify(optExcluded))};
+  renderOptResults(allResults, _totalHits);
   } finally { _hideOptSpinner(); }
 }
 
-function renderOptResults(results){
+function renderOptResults(results, totalHits){
   _optResultCache = results; // プリセット保存用にキャッシュ
   // 個別ID選択回数（同じIDを複数回選んでいる場合も考慮）→ computeHitKeys で count limit に使用
   const desiredMeritIdCounts=new Map();
@@ -4727,7 +4735,7 @@ function renderOptResults(results){
     const addTab = document.getElementById('optTabAdd');
     if(addTab) addTab.classList.remove('sp-tab-open');
   }
-  document.getElementById('optResults').innerHTML=(_isSp ? '' : addSec)+results.map((r,rank)=>{
+  let resultsHtml=(_isSp ? '' : addSec)+results.map((r,rank)=>{
     const {vessel,assignment,covered}=r;
     const total=r.total??optSelected.length;
     const full=covered>=total;
@@ -4763,6 +4771,12 @@ function renderOptResults(results){
       </div>
     </div>`;
   }).join('');
+
+  if(totalHits!=null){
+    const _cap=totalHits>=200?' (上限)':'';
+    resultsHtml+=`<div style="font-size:10px;color:#446;text-align:right;padding:8px 4px 2px;">${results.length}件表示 / ${totalHits}件ヒット${_cap}</div>`;
+  }
+  document.getElementById('optResults').innerHTML=resultsHtml;
 
   // スマホ：結果エリアへスクロール
   if(window.matchMedia('(max-width:768px)').matches){
@@ -4998,8 +5012,8 @@ function confirmPresetSave(){
     vesselIdx: vidx,
     clsName: vessel.cls,
     vesselName: vessel.name,
-    optSelected: JSON.parse(JSON.stringify(optSelected)),
-    optExcluded: JSON.parse(JSON.stringify(optExcluded)),
+    optSelected: JSON.parse(JSON.stringify(_optSearchContext?.optSelectedSnapshot ?? optSelected)),
+    optExcluded: JSON.parse(JSON.stringify(_optSearchContext?.optExcludedSnapshot ?? optExcluded)),
     assignment: assignment.map(r=>r?JSON.parse(JSON.stringify(r)):null)
   });
   savePresetsStorage();
